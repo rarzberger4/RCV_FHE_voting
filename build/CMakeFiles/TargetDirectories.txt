@@ -1,0 +1,3 @@
+/home/raphi/voting/build/CMakeFiles/exec.dir
+/home/raphi/voting/build/CMakeFiles/edit_cache.dir
+/home/raphi/voting/build/CMakeFiles/rebuild_cache.dir

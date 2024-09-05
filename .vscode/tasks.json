@@ -1,0 +1,11 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "buildCmake",
+    		"type": "shell",
+				"command": "cd build && rm CMakeCache.txt && cmake .. -DCMAKE_BUILD_TYPE=Debug && make"
+		}
+	]
+}
+
