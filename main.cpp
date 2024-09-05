@@ -31,7 +31,6 @@
 
 /*
   Simple examples for CKKS
-  
  */
 
 #define PROFILE
