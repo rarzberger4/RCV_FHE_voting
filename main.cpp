@@ -11,7 +11,7 @@
 using namespace lbcrypto;
 using namespace std::chrono;
 
-// Function to get the current memory usage of the calling process
+// Function to get the current memory usage of the calling process, works only in linux
 size_t GetMemoryUsage()
 {
     std::ifstream statm("/proc/self/statm");
@@ -26,14 +26,12 @@ size_t GetMemoryUsage()
 
 
 // Function to generate Votes (manual, CSV or random)
-std::vector<std::vector<int64_t>> GenerateVotes(int numOptions, int numVotes, unsigned int randomSeed,
-                                                bool isManualVoting, const std::string& csvFilePath) {
+std::vector<std::vector<int64_t>> GenerateVotes(int numOptions, int numVotes, unsigned int randomSeed, bool isManualVoting, const std::string& csvFilePath) {
     std::vector<std::vector<int64_t>> votes;
 
     if (isManualVoting) {
         // Manual voting logic
-        std::cout << "Manual voting enabled. Enter your votes (one option per vote, valid options are 1-" 
-                  << numOptions << "):\n";
+        std::cout << "Manual voting enabled. Enter your votes (one option per vote, valid options are 1-" << numOptions << "):\n";
         for (int i = 0; i < numVotes; ++i) {
             int userVote;
             do {
@@ -62,11 +60,7 @@ std::vector<std::vector<int64_t>> GenerateVotes(int numOptions, int numVotes, un
         while (std::getline(file, line)) {
             // Increment line count for debugging
             ++lineCount;
-
-            // Remove leading/trailing whitespace from the line
-            line.erase(0, line.find_first_not_of(" \t\n\r"));
-            line.erase(line.find_last_not_of(" \t\n\r") + 1);
-
+            
             // Skip empty lines
             if (line.empty()) {
                 std::cerr << "Warning: Skipping empty line at " << lineCount << "\n";
@@ -114,7 +108,6 @@ std::vector<std::vector<int64_t>> GenerateVotes(int numOptions, int numVotes, un
         std::cout << "Random votes generated.\n";
     }
 
-    std::cout << votes;
     return votes;
 }
 
@@ -128,9 +121,7 @@ bool IsFileAccessible(const std::string& filePath) {
 
 
 // Function to simulate voting with user-defined options and votes
-void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly> &cryptoContext, const std::string &schemeName,
-                                  int numOptions, int numVotes, unsigned int randomSeed,
-                                  const std::vector<std::vector<int64_t>> *preGeneratedVotes)
+void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly> &cryptoContext, const std::string &schemeName, int numOptions, int numVotes, unsigned int randomSeed, const std::vector<std::vector<int64_t>> *preGeneratedVotes)
 {
     std::cout << "Running Voting Scheme with " << schemeName << " Scheme\n";
 
@@ -148,16 +139,6 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly> &cryptoContext, 
     std::vector<std::vector<int64_t>> votes(numVotes, std::vector<int64_t>(numOptions, 0));
     votes = *preGeneratedVotes;
 
-    // Plaintext vote aggregation
-    std::vector<int64_t> plaintextTotal(numOptions, 0);
-    for (const auto &vote : votes)
-    {
-        for (int i = 0; i < numOptions; ++i)
-        {
-            plaintextTotal[i] += vote[i];
-        }
-    }
-
     // Key Generation
     size_t memStart = GetMemoryUsage();
     auto start = high_resolution_clock::now();
@@ -166,10 +147,10 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly> &cryptoContext, 
     auto end = high_resolution_clock::now();
     auto keyGenTime = duration_cast<milliseconds>(end - start).count();
 
-    // Generate Evaluation Keys
+    // Generate Evaluation Keys - need for mulltiplication or rotation
     start = high_resolution_clock::now();
-    cryptoContext->EvalMultKeyGen(keyPair.secretKey);
-    cryptoContext->EvalRotateKeyGen(keyPair.secretKey, {1, -1});
+    //cryptoContext->EvalMultKeyGen(keyPair.secretKey);
+    //cryptoContext->EvalRotateKeyGen(keyPair.secretKey, {1, -1});
     end = high_resolution_clock::now();
     auto evalKeysTime = duration_cast<milliseconds>(end - start).count();
 
@@ -229,6 +210,16 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly> &cryptoContext, 
         std::cout << "  Option " << i + 1 << ": " << result->GetPackedValue()[i] << " votes\n";
     }
 
+    // Plaintext vote aggregation
+    std::vector<int64_t> plaintextTotal(numOptions, 0);
+    for (const auto &vote : votes)
+    {
+        for (int i = 0; i < numOptions; ++i)
+        {
+            plaintextTotal[i] += vote[i];
+        }
+    }
+
     // Validate homomorphic result
     bool isValid = true;
     for (int i = 0; i < numOptions; ++i)
@@ -263,13 +254,13 @@ int main()
     bool manualVoting = false;
     std::string csvFilePath = "dummy_votes.csv";   //if empty random votes are generated, manual Voting must be false
 
+
+
     if (!IsFileAccessible(csvFilePath)) {
         throw std::runtime_error("Error: Specified file path is invalid or the file cannot be accessed.");
     }else{
         std::cout << "CSV File accessable\n";
     }
-
-
 
     std::vector<std::vector<int64_t>> generatedVotes;
     generatedVotes = GenerateVotes(numOptions, numVotes, randomSeed, manualVoting, csvFilePath);
@@ -290,6 +281,7 @@ int main()
     cryptoContextBGV->Enable(PKE);
     cryptoContextBGV->Enable(LEVELEDSHE);
 
+    // fork is used because its memory is separated from each other fork so no biased memory measurement is taken
     // Fork process for BFV
     pid_t pidBFV = fork();
     if (pidBFV == 0)
