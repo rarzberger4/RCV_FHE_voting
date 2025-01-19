@@ -79,6 +79,16 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly> &cryptoContext, 
     std::vector<std::vector<int64_t>> votes(numVotes, std::vector<int64_t>(numOptions, 0));
     votes = *preGeneratedVotes;
 
+    // Plaintext vote aggregation
+    std::vector<int64_t> plaintextTotal(numOptions, 0);
+    for (const auto &vote : votes)
+    {
+        for (int i = 0; i < numOptions; ++i)
+        {
+            plaintextTotal[i] += vote[i];
+        }
+    }
+
     // Key Generation
     size_t memStart = GetMemoryUsage();
     auto start = high_resolution_clock::now();
@@ -150,6 +160,27 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly> &cryptoContext, 
         std::cout << "  Option " << i + 1 << ": " << result->GetPackedValue()[i] << " votes\n";
     }
 
+    // Validate homomorphic result
+    bool isValid = true;
+    for (int i = 0; i < numOptions; ++i)
+    {
+        if (result->GetPackedValue()[i] != plaintextTotal[i])
+        {
+            isValid = false;
+            std::cerr << "Validation Failed: Option " << i + 1 << " does not match. "
+                      << "Expected: " << plaintextTotal[i]
+                      << ", Decrypted: " << result->GetPackedValue()[i] << "\n";
+        }
+    }
+    if (isValid)
+    {
+        std::cout << "Validation Passed: Homomorphic and plaintext results match.\n";
+    }
+    else
+    {
+        std::cerr << "Validation Failed: Discrepancy detected.\n";
+    }
+
     std::cout << std::endl;
     exit(0);
 }
@@ -160,7 +191,7 @@ int main()
     int numOptions = 3;                                                                                           // Number of voting options
     int numVotes = 10;                                                                                            // Number of votes
     unsigned int randomSeed = static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()); // to have the same random voting for each algorithm
-    bool manualVoting = false;                                                                                     // stimmabgabe per CLI
+    bool manualVoting = false;                                                                                    // stimmabgabe per CLI
 
     std::vector<std::vector<int64_t>> generatedVotes;
     generatedVotes = GenerateVotes(numOptions, numVotes, randomSeed, manualVoting);
@@ -180,7 +211,6 @@ int main()
     auto cryptoContextBGV = GenCryptoContext(paramsBGV);
     cryptoContextBGV->Enable(PKE);
     cryptoContextBGV->Enable(LEVELEDSHE);
-    
 
     // Fork process for BFV
     pid_t pidBFV = fork();
