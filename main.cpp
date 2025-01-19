@@ -3,9 +3,22 @@
 #include <iostream>
 #include <vector>
 #include <random>
+#include <fstream>
+#include <unistd.h>
+#include <sys/wait.h>
 
 using namespace lbcrypto;
 using namespace std::chrono;
+
+size_t GetMemoryUsage() {
+    std::ifstream statm("/proc/self/statm");
+    size_t memoryUsage = 0;
+    if (statm.is_open()) {
+        statm >> memoryUsage; // Resident memory in pages
+        memoryUsage *= sysconf(_SC_PAGESIZE); // Convert pages to bytes
+    }
+    return memoryUsage; // Memory in bytes
+}
 
 // Function to simulate voting with user-defined options and votes
 void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, const std::string& schemeName, 
@@ -31,10 +44,12 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, 
     }
 
     // Key Generation
+    std::cout << "Memory Usage (KeyGen) before: " << GetMemoryUsage() / 1024<< " KB\n";
     auto start = high_resolution_clock::now();
     auto keyPair = cryptoContext->KeyGen();
     auto end = high_resolution_clock::now();
     auto keyGenTime = duration_cast<milliseconds>(end - start).count();
+
 
     // Generate Evaluation Keys
     start = high_resolution_clock::now();
@@ -64,6 +79,7 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, 
     end = high_resolution_clock::now();
     auto evalTime = duration_cast<milliseconds>(end - start).count();
 
+
     // Decrypt Result
     Plaintext result;
     start = high_resolution_clock::now();
@@ -72,6 +88,7 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, 
     auto decryptionTime = duration_cast<milliseconds>(end - start).count();
 
     result->SetLength(numOptions); // Limit to the number of options
+    std::cout << "Memory Usage (KeyGen) after: " << GetMemoryUsage() / 1024<< " KB\n";
 
 
     // Output Results
@@ -88,17 +105,19 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, 
     }
 
     std::cout << std::endl;
+    exit(0);
 }
+
 
 int main() {
     // User-defined parameters
-    int numOptions = 30;   // Number of voting options
-    int numVotes = 1000;  // Number of votes
+    int numOptions = 3;   // Number of voting options
+    int numVotes = 100;  // Number of votes
 
     // Setup BFV CryptoContext
     CCParams<CryptoContextBFVRNS> paramsBFV;
-    paramsBFV.SetPlaintextModulus(65537);
-    paramsBFV.SetMultiplicativeDepth(2);
+    paramsBFV.SetPlaintextModulus(65537); //2^16+1
+    paramsBFV.SetMultiplicativeDepth(1);
     auto cryptoContextBFV = GenCryptoContext(paramsBFV);
     cryptoContextBFV->Enable(PKE);
     cryptoContextBFV->Enable(LEVELEDSHE);
@@ -106,15 +125,49 @@ int main() {
     // Setup BGV CryptoContext
     CCParams<CryptoContextBGVRNS> paramsBGV;
     paramsBGV.SetPlaintextModulus(65537);
-    paramsBGV.SetMultiplicativeDepth(2);
+    paramsBGV.SetMultiplicativeDepth(1);
     auto cryptoContextBGV = GenCryptoContext(paramsBGV);
     cryptoContextBGV->Enable(PKE);
     cryptoContextBGV->Enable(LEVELEDSHE);
 
 
-    // Run voting schemes
-    RunVotingSchemeWithUserInput(cryptoContextBFV, "BFV", numOptions, numVotes);
-    RunVotingSchemeWithUserInput(cryptoContextBGV, "BGV", numOptions, numVotes);
+    pid_t pidBFV = fork();
+    if (pidBFV == 0) {
+        // Child process for BFV
+        RunVotingSchemeWithUserInput(cryptoContextBFV, "BFV", numOptions, numVotes);
+    } else if (pidBFV > 0) {
+        // Parent process waits for BFV to finish
+        int statusBFV;
+        waitpid(pidBFV, &statusBFV, 0);
+        if (WIFEXITED(statusBFV)) {
+            std::cout << "BFV Process Completed Successfully.\n";
+        } else {
+            std::cerr << "BFV Process Failed.\n";
+        }
 
+        // Fork process for BGV
+        pid_t pidBGV = fork();
+        if (pidBGV == 0) {
+            // Child process for BGV
+            RunVotingSchemeWithUserInput(cryptoContextBGV, "BGV", numOptions, numVotes);
+        } else if (pidBGV > 0) {
+            // Parent process waits for BGV to finish
+            int statusBGV;
+            waitpid(pidBGV, &statusBGV, 0);
+            if (WIFEXITED(statusBGV)) {
+                std::cout << "BGV Process Completed Successfully.\n";
+            } else {
+                std::cerr << "BGV Process Failed.\n";
+            }
+        } else {
+            std::cerr << "Failed to fork for BGV process.\n";
+            return 1;
+        }
+    } else {
+        std::cerr << "Failed to fork for BFV process.\n";
+        return 1;
+    }
+
+    std::cout << "All processes completed.\n";
     return 0;
 }
