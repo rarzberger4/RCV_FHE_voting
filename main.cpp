@@ -22,7 +22,7 @@ size_t GetMemoryUsage() {
 
 // Function to simulate voting with user-defined options and votes
 void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, const std::string& schemeName, 
-                                  int numOptions, int numVotes, unsigned int randomSeed) {
+                                  int numOptions, int numVotes, unsigned int randomSeed, bool manualVoting) {
     std::cout << "Running Voting Scheme with " << schemeName << " Scheme\n";
 
     // Display voting options
@@ -33,14 +33,28 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, 
     }
     std::cout << "\nTotal Number of Votes: " << numVotes << "\n";
 
-    // Generate random votes (one-hot encoding)
+    // Generate votes
     std::vector<std::vector<int64_t>> votes(numVotes, std::vector<int64_t>(numOptions, 0));
-    std::default_random_engine generator(randomSeed);
-    std::uniform_int_distribution<int> distribution(0, numOptions - 1);
-
-    for (auto& vote : votes) {
-        int selectedOption = distribution(generator);
-        vote[selectedOption] = 1; // Only one option is voted per vote
+    if (manualVoting) {
+        std::cout << "Enter your votes (one option per vote, valid options are 1-" << numOptions << "):\n";
+        for (int i = 0; i < numVotes; ++i) {
+            int userVote;
+            do {
+                std::cout << "Vote " << i + 1 << ": ";
+                std::cin >> userVote;
+                if (userVote < 1 || userVote > numOptions) {
+                    std::cout << "Invalid option. Please vote again.\n";
+                }
+            } while (userVote < 1 || userVote > numOptions);
+            votes[i][userVote - 1] = 1; // Record the vote (adjust for 0-based indexing)
+        }
+    } else {
+        std::default_random_engine generator(randomSeed);
+        std::uniform_int_distribution<int> distribution(0, numOptions - 1);
+        for (auto& vote : votes) {
+            int selectedOption = distribution(generator);
+            vote[selectedOption] = 1; // Random vote
+        }
     }
 
     // Key Generation
@@ -121,8 +135,9 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, 
 int main() {
     // User-defined parameters
     int numOptions = 3;   // Number of voting options
-    int numVotes = 1000;  // Number of votes
+    int numVotes = 10;  // Number of votes
     unsigned int randomSeed = static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()); //to have the same random voting for each algorithm
+    bool manualVoting = true; //stimmabgabe per CLI
 
     // Setup BFV CryptoContext
     CCParams<CryptoContextBFVRNS> paramsBFV;
@@ -144,7 +159,7 @@ int main() {
     pid_t pidBFV = fork();
     if (pidBFV == 0) {
         // Child process for BFV
-        RunVotingSchemeWithUserInput(cryptoContextBFV, "BFV", numOptions, numVotes, randomSeed);
+        RunVotingSchemeWithUserInput(cryptoContextBFV, "BFV", numOptions, numVotes, randomSeed, manualVoting);
     } else if (pidBFV > 0) {
         // Parent process waits for BFV to finish
         int statusBFV;
@@ -159,7 +174,7 @@ int main() {
         pid_t pidBGV = fork();
         if (pidBGV == 0) {
             // Child process for BGV
-            RunVotingSchemeWithUserInput(cryptoContextBGV, "BGV", numOptions, numVotes, randomSeed);
+            RunVotingSchemeWithUserInput(cryptoContextBGV, "BGV", numOptions, numVotes, randomSeed, manualVoting);
         } else if (pidBGV > 0) {
             // Parent process waits for BGV to finish
             int statusBGV;
