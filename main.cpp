@@ -22,7 +22,7 @@ size_t GetMemoryUsage() {
 
 // Function to simulate voting with user-defined options and votes
 void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, const std::string& schemeName, 
-                                  int numOptions, int numVotes) {
+                                  int numOptions, int numVotes, unsigned int randomSeed) {
     std::cout << "Running Voting Scheme with " << schemeName << " Scheme\n";
 
     // Display voting options
@@ -35,7 +35,7 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, 
 
     // Generate random votes (one-hot encoding)
     std::vector<std::vector<int64_t>> votes(numVotes, std::vector<int64_t>(numOptions, 0));
-    std::default_random_engine generator;
+    std::default_random_engine generator(randomSeed);
     std::uniform_int_distribution<int> distribution(0, numOptions - 1);
 
     for (auto& vote : votes) {
@@ -44,8 +44,9 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, 
     }
 
     // Key Generation
-    std::cout << "Memory Usage (KeyGen) before: " << GetMemoryUsage() / 1024<< " KB\n";
+    size_t memStart = GetMemoryUsage();
     auto start = high_resolution_clock::now();
+    auto startTotal = start;
     auto keyPair = cryptoContext->KeyGen();
     auto end = high_resolution_clock::now();
     auto keyGenTime = duration_cast<milliseconds>(end - start).count();
@@ -85,11 +86,14 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, 
     start = high_resolution_clock::now();
     cryptoContext->Decrypt(keyPair.secretKey, totalVotes, &result);
     end = high_resolution_clock::now();
+    auto endTotal = end;
     auto decryptionTime = duration_cast<milliseconds>(end - start).count();
 
     result->SetLength(numOptions); // Limit to the number of options
-    std::cout << "Memory Usage (KeyGen) after: " << GetMemoryUsage() / 1024<< " KB\n";
+    size_t memEnd = GetMemoryUsage();
 
+    auto evalTimeTotal = duration_cast<milliseconds>(endTotal - startTotal).count();
+    auto votesPerSec = ((float)numVotes) / (evalTimeTotal/1000.0);
 
     // Output Results
     std::cout << "Runtime Details:\n";
@@ -98,8 +102,13 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, 
     std::cout << "  Encryption Time: " << encryptionTime << " ms\n";
     std::cout << "  Evaluation Time (Addition): " << evalTime << " ms\n";
     std::cout << "  Decryption Time: " << decryptionTime << " ms\n";
+    std::cout << "  Total Time: " << evalTimeTotal << "ms\n";
+    std::cout << "  Votes per Sec: " << votesPerSec << "\n";
+    std::cout << "  Memory Usage before: " << memStart / (1024*1024) << " MB\n";
+    std::cout << "  Memory Usage after: " << memEnd / (1024*1024) << " MB\n";
+    std::cout << "  Memory Usage Total: " << (memEnd - memStart) / (1024*1024) << " MB\n";
 
-    std::cout << "Voting Results:\n";
+    std::cout << "\nVoting Results:\n";
     for (int i = 0; i < numOptions; ++i) {
         std::cout << "  Option " << i + 1 << ": " << result->GetPackedValue()[i] << " votes\n";
     }
@@ -112,7 +121,8 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, 
 int main() {
     // User-defined parameters
     int numOptions = 3;   // Number of voting options
-    int numVotes = 100;  // Number of votes
+    int numVotes = 1000;  // Number of votes
+    unsigned int randomSeed = static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()); //to have the same random voting for each algorithm
 
     // Setup BFV CryptoContext
     CCParams<CryptoContextBFVRNS> paramsBFV;
@@ -134,7 +144,7 @@ int main() {
     pid_t pidBFV = fork();
     if (pidBFV == 0) {
         // Child process for BFV
-        RunVotingSchemeWithUserInput(cryptoContextBFV, "BFV", numOptions, numVotes);
+        RunVotingSchemeWithUserInput(cryptoContextBFV, "BFV", numOptions, numVotes, randomSeed);
     } else if (pidBFV > 0) {
         // Parent process waits for BFV to finish
         int statusBFV;
@@ -149,7 +159,7 @@ int main() {
         pid_t pidBGV = fork();
         if (pidBGV == 0) {
             // Child process for BGV
-            RunVotingSchemeWithUserInput(cryptoContextBGV, "BGV", numOptions, numVotes);
+            RunVotingSchemeWithUserInput(cryptoContextBGV, "BGV", numOptions, numVotes, randomSeed);
         } else if (pidBGV > 0) {
             // Parent process waits for BGV to finish
             int statusBGV;
