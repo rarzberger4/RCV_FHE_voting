@@ -6,6 +6,7 @@
 #include <fstream>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <cstdlib>
 
 using namespace lbcrypto;
 using namespace std::chrono;
@@ -23,40 +24,108 @@ size_t GetMemoryUsage()
     return memoryUsage; // Memory in bytes
 }
 
-// Function to generate votes
-std::vector<std::vector<int64_t>> GenerateVotes(int numOptions, int numVotes, unsigned int randomSeed, bool isManualVoting)
-{
-    std::vector<std::vector<int64_t>> votes(numVotes, std::vector<int64_t>(numOptions, 0));
-    if (isManualVoting)
-    {
-        std::cout << "Enter your votes (one option per vote, valid options are 1-" << numOptions << "):\n";
-        for (int i = 0; i < numVotes; ++i)
-        {
+
+// Function to generate Votes (manual, CSV or random)
+std::vector<std::vector<int64_t>> GenerateVotes(int numOptions, int numVotes, unsigned int randomSeed,
+                                                bool isManualVoting, const std::string& csvFilePath) {
+    std::vector<std::vector<int64_t>> votes;
+
+    if (isManualVoting) {
+        // Manual voting logic
+        std::cout << "Manual voting enabled. Enter your votes (one option per vote, valid options are 1-" 
+                  << numOptions << "):\n";
+        for (int i = 0; i < numVotes; ++i) {
             int userVote;
-            do
-            {
+            do {
                 std::cout << "Vote " << i + 1 << ": ";
                 std::cin >> userVote;
-                if (userVote < 1 || userVote > numOptions)
-                {
+                if (userVote < 1 || userVote > numOptions) {
                     std::cout << "Invalid option. Please vote again.\n";
                 }
             } while (userVote < 1 || userVote > numOptions);
-            votes[i][userVote - 1] = 1; // Record the vote (adjust for 0-based indexing)
+            std::vector<int64_t> vote(numOptions, 0);
+            vote[userVote - 1] = 1; // Record vote
+            votes.push_back(vote);
         }
-    }
-    else
-    {
+    } else if (!csvFilePath.empty()) {
+        // Open the CSV file
+        std::ifstream file(csvFilePath);
+        if (!file.is_open()) {
+            throw std::runtime_error("Error: Unable to open CSV file.");
+        }
+
+        std::cout << "Processing CSV file: " << csvFilePath << "\n";
+
+        std::string line;
+        int lineCount = 0;
+
+        while (std::getline(file, line)) {
+            // Increment line count for debugging
+            ++lineCount;
+
+            // Remove leading/trailing whitespace from the line
+            line.erase(0, line.find_first_not_of(" \t\n\r"));
+            line.erase(line.find_last_not_of(" \t\n\r") + 1);
+
+            // Skip empty lines
+            if (line.empty()) {
+                std::cerr << "Warning: Skipping empty line at " << lineCount << "\n";
+                continue;
+            }
+
+            std::vector<int64_t> vote(numOptions, 0);
+            std::stringstream lineStream(line);
+            std::string cell;
+            int i = 0;        
+
+            while (std::getline(lineStream, cell, ';')) { // ';' as delimiter
+                if (i >= numOptions) {
+                    throw std::runtime_error("Error: Too many options in a row at line " + std::to_string(lineCount));
+                } 
+                vote[i++] = std::strtol(cell.c_str(), nullptr, 10); // Convert to integer
+            }
+
+            if (i != numOptions) {
+                throw std::runtime_error("Error: Not enough options in a row at line " + std::to_string(lineCount));
+            }
+
+            votes.push_back(vote);
+        }
+
+        file.close();
+
+        // Verify the number of votes matches the expectation
+        if (votes.size() != static_cast<size_t>(numVotes)) {
+            throw std::runtime_error("Error: Number of votes in CSV file does not match expected count (" +
+                                     std::to_string(votes.size()) + " vs " + std::to_string(numVotes) + ").");
+        }
+
+        std::cout << "Votes successfully loaded from CSV file. Total votes: " << votes.size() << "\n";
+    } else {
+        // Random vote generation
         std::default_random_engine generator(randomSeed);
         std::uniform_int_distribution<int> distribution(0, numOptions - 1);
-        for (auto &vote : votes)
-        {
+        for (int i = 0; i < numVotes; ++i) {
+            std::vector<int64_t> vote(numOptions, 0);
             int selectedOption = distribution(generator);
-            vote[selectedOption] = 1; // Random vote
+            vote[selectedOption] = 1; // Generate random vote
+            votes.push_back(vote);
         }
+        std::cout << "Random votes generated.\n";
     }
+
+    std::cout << votes;
     return votes;
 }
+
+
+//check for CSV file
+bool IsFileAccessible(const std::string& filePath) {
+    std::ifstream file(filePath);
+    return file.good(); // Returns true if the file exists and is accessible
+}
+
+
 
 // Function to simulate voting with user-defined options and votes
 void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly> &cryptoContext, const std::string &schemeName,
@@ -188,13 +257,22 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly> &cryptoContext, 
 int main()
 {
     // User-defined parameters
-    int numOptions = 3;                                                                                           // Number of voting options
-    int numVotes = 10;                                                                                            // Number of votes
+    int numOptions = 3;     // Number of voting options
+    int numVotes = 10;      // Number of votes
     unsigned int randomSeed = static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()); // to have the same random voting for each algorithm
-    bool manualVoting = false;                                                                                    // stimmabgabe per CLI
+    bool manualVoting = false;
+    std::string csvFilePath = "dummy_votes.csv";   //if empty random votes are generated, manual Voting must be false
+
+    if (!IsFileAccessible(csvFilePath)) {
+        throw std::runtime_error("Error: Specified file path is invalid or the file cannot be accessed.");
+    }else{
+        std::cout << "CSV File accessable\n";
+    }
+
+
 
     std::vector<std::vector<int64_t>> generatedVotes;
-    generatedVotes = GenerateVotes(numOptions, numVotes, randomSeed, manualVoting);
+    generatedVotes = GenerateVotes(numOptions, numVotes, randomSeed, manualVoting, csvFilePath);
 
     // Setup BFV CryptoContext
     CCParams<CryptoContextBFVRNS> paramsBFV;
