@@ -10,6 +10,7 @@
 using namespace lbcrypto;
 using namespace std::chrono;
 
+//Function to get the current memory usage of the calling process
 size_t GetMemoryUsage() {
     std::ifstream statm("/proc/self/statm");
     size_t memoryUsage = 0;
@@ -20,22 +21,10 @@ size_t GetMemoryUsage() {
     return memoryUsage; // Memory in bytes
 }
 
-// Function to simulate voting with user-defined options and votes
-void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, const std::string& schemeName, 
-                                  int numOptions, int numVotes, unsigned int randomSeed, bool manualVoting) {
-    std::cout << "Running Voting Scheme with " << schemeName << " Scheme\n";
-
-    // Display voting options
-    std::cout << "Voting Options: ";
-    for (int i = 0; i < numOptions; ++i) {
-        std::cout << "Option " << i + 1;
-        if (i < numOptions - 1) std::cout << ", ";
-    }
-    std::cout << "\nTotal Number of Votes: " << numVotes << "\n";
-
-    // Generate votes
+// Function to generate votes
+std::vector<std::vector<int64_t>> GenerateVotes(int numOptions, int numVotes, unsigned int randomSeed, bool isManualVoting) {
     std::vector<std::vector<int64_t>> votes(numVotes, std::vector<int64_t>(numOptions, 0));
-    if (manualVoting) {
+    if (isManualVoting) {
         std::cout << "Enter your votes (one option per vote, valid options are 1-" << numOptions << "):\n";
         for (int i = 0; i < numVotes; ++i) {
             int userVote;
@@ -56,6 +45,29 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, 
             vote[selectedOption] = 1; // Random vote
         }
     }
+    return votes;
+}
+
+// Function to simulate voting with user-defined options and votes
+void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly>& cryptoContext, const std::string& schemeName, 
+                                  int numOptions, int numVotes, unsigned int randomSeed,
+                                  const std::vector<std::vector<int64_t>>* preGeneratedVotes) {
+    std::cout << "Running Voting Scheme with " << schemeName << " Scheme\n";
+
+
+
+    // Display voting options
+    std::cout << "Voting Options: ";
+    for (int i = 0; i < numOptions; ++i) {
+        std::cout << "Option " << i + 1;
+        if (i < numOptions - 1) std::cout << ", ";
+    }
+    std::cout << "\nTotal Number of Votes: " << numVotes << "\n";
+
+    // Input votes
+    std::vector<std::vector<int64_t>> votes(numVotes, std::vector<int64_t>(numOptions, 0));
+    votes = *preGeneratedVotes;
+    
 
     // Key Generation
     size_t memStart = GetMemoryUsage();
@@ -139,6 +151,10 @@ int main() {
     unsigned int randomSeed = static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()); //to have the same random voting for each algorithm
     bool manualVoting = true; //stimmabgabe per CLI
 
+
+    std::vector<std::vector<int64_t>> generatedVotes;
+    generatedVotes = GenerateVotes(numOptions, numVotes, randomSeed, manualVoting);
+
     // Setup BFV CryptoContext
     CCParams<CryptoContextBFVRNS> paramsBFV;
     paramsBFV.SetPlaintextModulus(65537); //2^16+1
@@ -159,7 +175,7 @@ int main() {
     pid_t pidBFV = fork();
     if (pidBFV == 0) {
         // Child process for BFV
-        RunVotingSchemeWithUserInput(cryptoContextBFV, "BFV", numOptions, numVotes, randomSeed, manualVoting);
+        RunVotingSchemeWithUserInput(cryptoContextBFV, "BFV", numOptions, numVotes, randomSeed, &generatedVotes);
     } else if (pidBFV > 0) {
         // Parent process waits for BFV to finish
         int statusBFV;
@@ -174,7 +190,7 @@ int main() {
         pid_t pidBGV = fork();
         if (pidBGV == 0) {
             // Child process for BGV
-            RunVotingSchemeWithUserInput(cryptoContextBGV, "BGV", numOptions, numVotes, randomSeed, manualVoting);
+            RunVotingSchemeWithUserInput(cryptoContextBGV, "BGV", numOptions, numVotes, randomSeed, &generatedVotes);
         } else if (pidBGV > 0) {
             // Parent process waits for BGV to finish
             int statusBGV;
