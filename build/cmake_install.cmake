@@ -1,4 +1,4 @@
-# Install script for directory: /home/raphi/FHEvoting
+# Install script for directory: /home/raphi/RCV_FHE_voting
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -50,5 +50,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/raphi/FHEvoting/build/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/raphi/RCV_FHE_voting/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

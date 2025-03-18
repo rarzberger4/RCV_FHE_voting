@@ -245,22 +245,19 @@ void RunVotingSchemeWithUserInput(const CryptoContext<DCRTPoly> &cryptoContext, 
     exit(0);
 }
 
+
+
 int main()
 {
     // User-defined parameters
-    int numOptions = 3;     // Number of voting options
-    int numVotes = 10;      // Number of votes
+    int numOptions = 5;     // Number of voting options
+    int numVotes = 10000;      // Number of voters
     unsigned int randomSeed = static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()); // to have the same random voting for each algorithm
     bool manualVoting = false;
-    std::string csvFilePath = "dummy_votes.csv";   //if empty random votes are generated, manual Voting must be false
+    std::string csvFilePath = "";   //if empty random votes are generated, manual Voting must be false
 
 
 
-    if (!IsFileAccessible(csvFilePath)) {
-        throw std::runtime_error("Error: Specified file path is invalid or the file cannot be accessed.");
-    }else{
-        std::cout << "CSV File accessable\n";
-    }
 
     std::vector<std::vector<int64_t>> generatedVotes;
     generatedVotes = GenerateVotes(numOptions, numVotes, randomSeed, manualVoting, csvFilePath);

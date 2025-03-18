@@ -49,8 +49,8 @@
 	"kind" : "codemodel",
 	"paths" : 
 	{
-		"build" : "/home/raphi/FHEvoting/build",
-		"source" : "/home/raphi/FHEvoting"
+		"build" : "/home/raphi/RCV_FHE_voting/build",
+		"source" : "/home/raphi/RCV_FHE_voting"
 	},
 	"version" : 
 	{

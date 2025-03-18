@@ -67,7 +67,7 @@
 				}
 			],
 			"type" : "INTERNAL",
-			"value" : "/home/raphi/FHEvoting/build"
+			"value" : "/home/raphi/RCV_FHE_voting/build"
 		},
 		{
 			"name" : "CMAKE_CACHE_MAJOR_VERSION",
@@ -479,7 +479,7 @@
 				}
 			],
 			"type" : "INTERNAL",
-			"value" : "/home/raphi/FHEvoting"
+			"value" : "/home/raphi/RCV_FHE_voting"
 		},
 		{
 			"name" : "CMAKE_INSTALL_PREFIX",
@@ -1027,7 +1027,7 @@
 				}
 			],
 			"type" : "STATIC",
-			"value" : "/home/raphi/FHEvoting/build"
+			"value" : "/home/raphi/RCV_FHE_voting/build"
 		},
 		{
 			"name" : "demo_IS_TOP_LEVEL",
@@ -1051,7 +1051,7 @@
 				}
 			],
 			"type" : "STATIC",
-			"value" : "/home/raphi/FHEvoting"
+			"value" : "/home/raphi/RCV_FHE_voting"
 		}
 	],
 	"kind" : "cache",

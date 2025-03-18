@@ -1,4 +1,4 @@
-CMakeFiles/exec.dir/main.cpp.o: /home/raphi/FHEvoting/main.cpp \
+CMakeFiles/exec.dir/main.cpp.o: /home/raphi/RCV_FHE_voting/main.cpp \
  /usr/include/stdc-predef.h /usr/local/include/openfhe/pke/openfhe.h \
  /usr/include/c++/11/initializer_list \
  /usr/include/x86_64-linux-gnu/c++/11/bits/c++config.h \
