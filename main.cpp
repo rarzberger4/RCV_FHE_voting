@@ -11,6 +11,8 @@
 using namespace lbcrypto;
 using namespace std::chrono;
 
+//testcomment
+
 // Function to get the current memory usage of the calling process, works only in linux
 size_t GetMemoryUsage()
 {
