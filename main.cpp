@@ -25,7 +25,6 @@ Ciphertext<DCRTPoly> HomomorphicTally(
     const std::vector<std::vector<Ciphertext<DCRTPoly>>> &encryptedBallots,
     CryptoContext<DCRTPoly> cc);
 
-
 // Generate random RANKED ballots (each voter ranks all candidates)
 std::vector<std::vector<int64_t>> GenerateRankedVotes(int numOptions, int numVotes, unsigned int randomSeed)
 {
@@ -64,7 +63,19 @@ std::vector<std::vector<int64_t>> ConvertToPermutationMatrix(const std::vector<i
 std::vector<Ciphertext<DCRTPoly>> EncryptBallotRows(
     const std::vector<std::vector<int64_t>> &matrix,
     CryptoContext<DCRTPoly> cc,
-    const PublicKey<DCRTPoly> &pk);
+    const PublicKey<DCRTPoly> &pk)
+{
+    std::vector<Ciphertext<DCRTPoly>> encryptedMatrix;
+
+    for (const auto &row : matrix)
+    {
+        Plaintext pt = cc->MakePackedPlaintext(row);
+        Ciphertext<DCRTPoly> ct = cc->Encrypt(pk, pt);
+        encryptedMatrix.push_back(ct);
+    }
+
+    return encryptedMatrix;
+}
 
 std::vector<int64_t> DecryptTallyRow(
     const std::vector<Ciphertext<DCRTPoly>> &row,
@@ -79,23 +90,6 @@ std::vector<int64_t> DecryptTallyRow(
     cc->Decrypt(keypair.secretKey, total, &result);
     result->SetLength(row.size());
     return result->GetPackedValue();
-}
-
-std::vector<Ciphertext<DCRTPoly>> EncryptBallotRows(
-    const std::vector<std::vector<int64_t>> &matrix,
-    CryptoContext<DCRTPoly> cc,
-    const PublicKey<DCRTPoly> &pk)
-{
-    std::vector<Ciphertext<DCRTPoly>> encryptedMatrix;
-
-    for (const auto &row : matrix)
-    {
-        Plaintext pt = cc->MakePackedPlaintext(row);
-        Ciphertext<DCRTPoly> ct = cc->Encrypt(pk, pt);
-        encryptedMatrix.push_back(ct);
-    }
-
-    return encryptedMatrix;
 }
 
 int RunIRVElection(
@@ -124,18 +118,13 @@ int RunIRVElection(
 
         for (auto &matrix : plaintextBallots)
         {
-            // Zero out eliminated candidate
+            std::vector<std::vector<int64_t>> cleaned;
+
             for (auto &row : matrix)
             {
                 row[eliminatedCandidate] = 0;
-            }
 
-            // Remove all-zero rows
-            std::vector<std::vector<int64_t>> cleaned;
-            for (const auto &row : matrix)
-            {
-                if (std::any_of(row.begin(), row.end(), [](int64_t v)
-                                { return v == 1; }))
+                if (std::any_of(row.begin(), row.end(), [](int64_t v) { return v == 1; }))
                 {
                     cleaned.push_back(row);
                 }
@@ -176,7 +165,7 @@ int RunIRVRound(
     // 2. Decrypt the result
     Plaintext result;
     cc->Decrypt(keypair.secretKey, total, &result);
-    result->SetLength(result->GetPackedValue().size());
+    result->SetLength(4);       // Limit to the number of candidates  TODO !!!
     std::vector<int64_t> tally = result->GetPackedValue();
 
     // 3. Print decrypted tallies
@@ -540,7 +529,7 @@ int main()
 {
     // User-defined parameters
     int numOptions = 4;                                                                                           // Number of voting options
-    int numVotes = 10;                                                                                           // Number of voters
+    int numVotes = 100;                                                                                           // Number of voters
     unsigned int randomSeed = static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()); // to have the same random voting for each algorithm
     bool manualVoting = false;
     std::string csvFilePath = ""; // if empty random votes are generated, manual Voting must be false
