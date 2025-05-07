@@ -11,7 +11,36 @@
 using namespace lbcrypto;
 using namespace std::chrono;
 
-//testcomment
+
+// Generate random RANKED ballots (each voter ranks all candidates)
+std::vector<std::vector<int64_t>> GenerateRankedVotes(int numOptions, int numVotes, unsigned int randomSeed) {
+    std::vector<std::vector<int64_t>> votes;
+    std::default_random_engine generator(randomSeed);
+
+    for (int v = 0; v < numVotes; ++v) {
+        std::vector<int64_t> ranking(numOptions);
+        for (int i = 0; i < numOptions; ++i)
+            ranking[i] = i;
+        std::shuffle(ranking.begin(), ranking.end(), generator);
+        votes.push_back(ranking);
+    }
+
+    std::cout << "Generated " << numVotes << " ranked ballots." << std::endl;
+    return votes;
+}
+
+std::vector<std::vector<int64_t>> ConvertToPermutationMatrix(const std::vector<int64_t>& ranking) {
+    int numOptions = ranking.size();
+    std::vector<std::vector<int64_t>> matrix(numOptions, std::vector<int64_t>(numOptions, 0));
+
+    for (int candidate = 0; candidate < numOptions; ++candidate) {
+        int rank = ranking[candidate]; // Candidate C is ranked R
+        matrix[rank][candidate] = 1;   // Row = rank, Col = candidate
+    }
+
+    return matrix;
+}
+
 
 // Function to get the current memory usage of the calling process, works only in linux
 size_t GetMemoryUsage()
@@ -253,7 +282,7 @@ int main()
 {
     // User-defined parameters
     int numOptions = 5;     // Number of voting options
-    int numVotes = 10000;      // Number of voters
+    int numVotes = 100;      // Number of voters
     unsigned int randomSeed = static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()); // to have the same random voting for each algorithm
     bool manualVoting = false;
     std::string csvFilePath = "";   //if empty random votes are generated, manual Voting must be false
@@ -263,6 +292,9 @@ int main()
 
     std::vector<std::vector<int64_t>> generatedVotes;
     generatedVotes = GenerateVotes(numOptions, numVotes, randomSeed, manualVoting, csvFilePath);
+
+
+
 
     // Setup BFV CryptoContext
     CCParams<CryptoContextBFVRNS> paramsBFV;

@@ -92,9 +92,9 @@ exec_EXTERNAL_OBJECTS =
 
 exec: CMakeFiles/exec.dir/main.cpp.o
 exec: CMakeFiles/exec.dir/build.make
-exec: /usr/local/lib/libOPENFHEpke.so.1.2.0
-exec: /usr/local/lib/libOPENFHEbinfhe.so.1.2.0
-exec: /usr/local/lib/libOPENFHEcore.so.1.2.0
+exec: /usr/local/lib/libOPENFHEpke.so.1.2.4
+exec: /usr/local/lib/libOPENFHEbinfhe.so.1.2.4
+exec: /usr/local/lib/libOPENFHEcore.so.1.2.4
 exec: CMakeFiles/exec.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/raphi/RCV_FHE_voting/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable exec"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/exec.dir/link.txt --verbose=$(VERBOSE)
