@@ -93,28 +93,35 @@ Ciphertext<DCRTPoly> HomomorphicTally(
 }
 
 
-// Find the candidate with the lowest tally
 int FindLowestCandidate(
-    const std::vector<int64_t> &tally,
-    const std::vector<int> &eliminated)
+    const std::vector<int64_t>& tally,
+    const std::vector<int>& eliminated)
 {
     int minVotes = std::numeric_limits<int>::max();
-    int minIndex = -1;
+    std::vector<int> tiedCandidates;
 
-    for (size_t i = 0; i < tally.size(); ++i)
-    {
-        if (std::find(eliminated.begin(), eliminated.end(), i) == eliminated.end())
-        {
-            if (tally[i] < minVotes)
-            {
+    //Find the minimum vote count among non-eliminated candidates
+    for (size_t i = 0; i < tally.size(); ++i) {
+        if (std::find(eliminated.begin(), eliminated.end(), i) == eliminated.end()) {
+            if (tally[i] < minVotes) {
                 minVotes = tally[i];
-                minIndex = i;
+                tiedCandidates = {static_cast<int>(i)};
+            } else if (tally[i] == minVotes) {
+                tiedCandidates.push_back(static_cast<int>(i));
             }
         }
     }
 
-    return minIndex;
+    //If there's a tie, break it by selecting the lowest index
+    if (tiedCandidates.size() > 1) {
+        // Deterministic tie resolution: always pick the lowest index
+        return *std::min_element(tiedCandidates.begin(), tiedCandidates.end());
+    }else {
+        return tiedCandidates[0];
+    }
 }
+
+
 
 int RunIRVRound(
     const std::vector<std::vector<Ciphertext<DCRTPoly>>> &encryptedBallots,
@@ -131,7 +138,7 @@ int RunIRVRound(
     // 2. Decrypt the result
     Plaintext result;
     cc->Decrypt(keypair.secretKey, total, &result);
-    result->SetLength(numCandidates);       // Limit to the number of candidates  TODO !!!
+    result->SetLength(numCandidates);
     std::vector<int64_t> tally = result->GetPackedValue();
 
     // 3. Print decrypted tallies
