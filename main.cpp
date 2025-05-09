@@ -36,6 +36,20 @@ void WriteCSVRow(const std::string& filename, const std::string& scheme,int numO
 }
 
 
+void RunForkedBenchmark(const std::function<void()> &fn) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        fn();
+        exit(0);
+    } else if (pid > 0) {
+        int status;
+        waitpid(pid, &status, 0);
+    } else {
+        std::cerr << "❌ Fork failed!\n";
+        exit(1);
+    }
+}
+
 // Function to get the current memory usage of the calling process, works only in linux
 size_t GetMemoryUsage()
 {
@@ -328,19 +342,16 @@ int RunIRVElection(
 
 
 
-int main()
-{
-    // User-defined parameters
-    int numOptions = 4;                                                                                           // Number of voting options
-    int numVotes = 500;                                                                                           // Number of voters
-    unsigned int randomSeed = static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()); // to have the same random voting for each algorithm
+int main() {
+    std::cout.setf(std::ios::unitbuf);  // Auto-flush stdout for child output
 
-    std::vector<std::vector<int64_t>> generatedVotes;
-    generatedVotes = GenerateVotes(numOptions, numVotes, randomSeed);
+    std::vector<int> candidateOptions = {4, 5};
+    std::vector<int> voteCounts = {100, 200};
+    int repetitions = 2;
 
     // Setup BFV CryptoContext
     CCParams<CryptoContextBFVRNS> paramsBFV;
-    paramsBFV.SetPlaintextModulus(65537); // 2^16+1
+    paramsBFV.SetPlaintextModulus(65537);
     paramsBFV.SetMultiplicativeDepth(1);
     auto cryptoContextBFV = GenCryptoContext(paramsBFV);
     cryptoContextBFV->Enable(PKE);
@@ -354,96 +365,53 @@ int main()
     cryptoContextBGV->Enable(PKE);
     cryptoContextBGV->Enable(LEVELEDSHE);
 
-    // fork is used because its memory is separated from each other fork so no biased memory measurement is taken
-    // Fork process for BFV
-    pid_t pidBFV = fork();
-    if (pidBFV == 0)
-    {
-        std::cout << "\n=== Running IRV with BFV ===\n";
+    for (int numOptions : candidateOptions) {
+        for (int numVotes : voteCounts) {
+            for (int rep = 0; rep < repetitions; ++rep) {
+                std::cout << "\n=== Run " << (rep + 1)
+                          << " | Options: " << numOptions
+                          << " | Votes: " << numVotes << " ===\n";
 
-        size_t memStart = GetMemoryUsage();
-        auto start = high_resolution_clock::now();
+                unsigned int randomSeed = static_cast<unsigned>(
+                    std::chrono::system_clock::now().time_since_epoch().count()) + rep;
 
-        auto keyPair = cryptoContextBFV->KeyGen();
+                std::vector<std::vector<int64_t>> generatedVotes =
+                    GenerateVotes(numOptions, numVotes, randomSeed);
 
-        std::vector<std::vector<std::vector<int64_t>>> plaintextBallots;
-        for (const auto &vote : generatedVotes)
-        {
-            plaintextBallots.push_back(ConvertToPermutationMatrix(vote));
-        }
+                // --- BFV Benchmark ---
+                RunForkedBenchmark([&]() {
+                    std::cout << "--- BFV Benchmark --- (PID: " << getpid()
+                              << ", Parent: " << getppid() << ")\n";
 
-        RunIRVElection(plaintextBallots, cryptoContextBFV, keyPair, "BFV", "bfv_results.csv", numOptions, numVotes);
+                    auto keyPair = cryptoContextBFV->KeyGen();
 
-        auto end = high_resolution_clock::now();
-        size_t memEnd = GetMemoryUsage();
+                    std::vector<std::vector<std::vector<int64_t>>> plaintextBallots;
+                    for (const auto &vote : generatedVotes)
+                        plaintextBallots.push_back(ConvertToPermutationMatrix(vote));
 
-        std::cout << "BFV Total Time: " << duration_cast<milliseconds>(end - start).count() << " ms\n";
-        std::cout << "Memory Used: " << (memEnd - memStart) / (1024 * 1024) << " MB\n";
+                    RunIRVElection(plaintextBallots, cryptoContextBFV, keyPair,
+                                   "BFV", "bfv_results.csv", numOptions, numVotes);
+                });
 
-        exit(0);
-    }
-    else if (pidBFV > 0)
-    {
-        int statusBFV;
-        waitpid(pidBFV, &statusBFV, 0);
-        if (WIFEXITED(statusBFV))
-        {
-            std::cout << "BFV Process Completed Successfully.\n";
-        }
-        else
-        {
-            std::cerr << "BFV Process Failed.\n";
-        }
+                // --- BGV Benchmark ---
+                RunForkedBenchmark([&]() {
+                    std::cout << "--- BGV Benchmark --- (PID: " << getpid()
+                              << ", Parent: " << getppid() << ")\n";
 
-        // Fork process for BGV
-        pid_t pidBGV = fork();
-        if (pidBGV == 0)
-        {
-            std::cout << "\n=== Running IRV with BGV ===\n";
+                    auto keyPair = cryptoContextBGV->KeyGen();
 
-            size_t memStart = GetMemoryUsage();
-            auto start = high_resolution_clock::now();
+                    std::vector<std::vector<std::vector<int64_t>>> plaintextBallots;
+                    for (const auto &vote : generatedVotes)
+                        plaintextBallots.push_back(ConvertToPermutationMatrix(vote));
 
-            auto keyPair = cryptoContextBGV->KeyGen();
-
-            std::vector<std::vector<std::vector<int64_t>>> plaintextBallots;
-            for (const auto &vote : generatedVotes)
-            {
-                plaintextBallots.push_back(ConvertToPermutationMatrix(vote));
-            }
-
-            RunIRVElection(plaintextBallots, cryptoContextBGV, keyPair, "BGV", "bgv_results.csv", numOptions, numVotes);
-
-            auto end = high_resolution_clock::now();
-            size_t memEnd = GetMemoryUsage();
-
-            std::cout << "BGV Total Time: " << duration_cast<milliseconds>(end - start).count() << " ms\n";
-            std::cout << "Memory Used: " << (memEnd - memStart) / (1024 * 1024) << " MB\n";
-
-            exit(0);
-        }
-        else if (pidBGV > 0)
-        {
-            int statusBGV;
-            waitpid(pidBGV, &statusBGV, 0);
-            if (WIFEXITED(statusBGV))
-            {
-                std::cout << "BGV Process Completed Successfully.\n";
-            }
-            else
-            {
-                std::cerr << "BGV Process Failed.\n";
+                    RunIRVElection(plaintextBallots, cryptoContextBGV, keyPair,
+                                   "BGV", "bgv_results.csv", numOptions, numVotes);
+                });
             }
         }
-        else
-        {
-            std::cerr << "Failed to fork for BGV process.\n";
-            return 1;
-        }
     }
-    else
-    {
-        std::cerr << "Failed to fork for BFV process.\n";
-        return 1;
-    }
+
+    std::cout << "\n✅ All benchmarks completed.\n";
+    return 0;
 }
+
