@@ -1,2 +1,0 @@
-Timestamp,Scheme,Optiones,Votes,Encrypt(ms),Add(ms),Decrypt(ms),Total(ms),CipherSize(Bytes),PeakMemory(MB)
-2025-05-09 10:45:34,BFV,4,100,1088,2,0,2644,262967,113
