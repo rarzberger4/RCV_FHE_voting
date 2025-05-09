@@ -7,9 +7,47 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <cstdlib>
+#include <ctime>
+#include <iomanip>
 
 using namespace lbcrypto;
 using namespace std::chrono;
+
+
+
+void WriteCSVHeader(const std::string& filename) {
+    std::ofstream file(filename, std::ios::app);
+    if (file.tellp() == 0) {
+        file << "Timestamp,Scheme,Optiones,Votes,Encrypt(ms),Add(ms),Decrypt(ms),Total(ms),CipherSize(Bytes),PeakMemory(MB)\n";
+    }
+    file.close();
+}
+
+void WriteCSVRow(const std::string& filename, const std::string& scheme,int numOptions, int numVotes,
+                 long encrypt, long add, long decrypt, long total,
+                 size_t ctSize, size_t peakMemMB)
+{
+    std::ofstream file(filename, std::ios::app);
+    auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    file << std::put_time(std::localtime(&now), "%Y-%m-%d %H:%M:%S") << ",";
+    file << scheme << "," << numOptions << "," << numVotes << "," << encrypt << "," << add << "," << decrypt << ","
+         << total << "," << ctSize << "," << peakMemMB << "\n";
+    file.close();
+}
+
+
+// Function to get the current memory usage of the calling process, works only in linux
+size_t GetMemoryUsage()
+{
+    std::ifstream statm("/proc/self/statm");
+    size_t memoryUsage = 0;
+    if (statm.is_open())
+    {
+        statm >> memoryUsage;                 // Resident memory in pages
+        memoryUsage *= sysconf(_SC_PAGESIZE); // Convert pages to bytes
+    }
+    return memoryUsage; // Memory in bytes
+}
 
 // Generate random RANKED ballots (each voter ranks all candidates)
 std::vector<std::vector<int64_t>> GenerateVotes(int numOptions, int numVotes, unsigned int randomSeed)
@@ -158,53 +196,110 @@ int RunIRVRound(
 int RunIRVElection(
     std::vector<std::vector<std::vector<int64_t>>> plaintextBallots,
     CryptoContext<DCRTPoly> cc,
-    const KeyPair<DCRTPoly> &keypair)
+    const KeyPair<DCRTPoly> &keypair,
+    const std::string& schemeName,
+    const std::string& csvFilename,
+    int numOptions,
+    int numVotes)   
 {
+    auto startTotal = high_resolution_clock::now();
+    size_t memStart = GetMemoryUsage();
+
     int numCandidates = plaintextBallots[0][0].size();
     std::vector<int> eliminated;
 
-    while (static_cast<int>(eliminated.size()) < numCandidates - 1)
-    {
-        // Encrypt current ballots
-        std::vector<std::vector<Ciphertext<DCRTPoly>>> encryptedBallots;
-        for (const auto &matrix : plaintextBallots)
-        {
-            encryptedBallots.push_back(EncryptBallotRows(matrix, cc, keypair.publicKey));
-        }
+    // Measure encryption
+    auto start = high_resolution_clock::now();
+    std::vector<std::vector<Ciphertext<DCRTPoly>>> encryptedBallots;
+    for (const auto &matrix : plaintextBallots) {
+        encryptedBallots.push_back(EncryptBallotRows(matrix, cc, keypair.publicKey));
+    }
+    auto end = high_resolution_clock::now();
+    long encryptTime = duration_cast<milliseconds>(end - start).count();
 
-        // Run one IRV round
-        int eliminatedCandidate = RunIRVRound(encryptedBallots, cc, keypair, eliminated, numCandidates);
-        eliminated.push_back(eliminatedCandidate);
+    // Measure addition
+    start = high_resolution_clock::now();
+    Ciphertext<DCRTPoly> total = encryptedBallots[0][0];
+    for (size_t i = 1; i < encryptedBallots.size(); ++i) {
+        total = cc->EvalAdd(total, encryptedBallots[i][0]);
+    }
+    end = high_resolution_clock::now();
+    long addTime = duration_cast<milliseconds>(end - start).count();
+    
 
-        // Prepare updated ballots
+    // Measure decryption
+    Plaintext result;
+    start = high_resolution_clock::now();
+    cc->Decrypt(keypair.secretKey, total, &result);
+    end = high_resolution_clock::now();
+    long decryptTime = duration_cast<milliseconds>(end - start).count();
+
+    result->SetLength(numCandidates);
+    std::vector<int64_t> tally = result->GetPackedValue();
+
+    std::cout << "Decrypted First-Choice Tally:\n";
+    for (size_t i = 0; i < tally.size(); ++i)
+        std::cout << "  Candidate " << i << ": " << tally[i] << " votes\n";
+
+    int toEliminate = FindLowestCandidate(tally, eliminated);
+    std::cout << "Eliminated Candidate: " << toEliminate << "\n\n";
+
+    // Run the rest of IRV logic (elimination + reranking)
+    while (static_cast<int>(eliminated.size()) < numCandidates - 1) {
+        eliminated.push_back(toEliminate);
+
         std::vector<std::vector<std::vector<int64_t>>> updatedBallots;
-
-        for (auto &matrix : plaintextBallots)
-        {
+        for (auto &matrix : plaintextBallots) {
             std::vector<std::vector<int64_t>> cleaned;
-
-            for (auto &row : matrix)
-            {
-                row[eliminatedCandidate] = 0;
-
-                if (std::any_of(row.begin(), row.end(), [](int64_t v) { return v == 1; }))
-                {
+            for (auto &row : matrix) {
+                row[toEliminate] = 0;
+                if (std::any_of(row.begin(), row.end(), [](int64_t v) { return v == 1; })) {
                     cleaned.push_back(row);
                 }
             }
-
             updatedBallots.push_back(cleaned);
         }
 
-        // Replace old ballots with updated ones
         plaintextBallots = updatedBallots;
+
+        // Re-encrypt
+        encryptedBallots.clear();
+        for (const auto &matrix : plaintextBallots) {
+            encryptedBallots.push_back(EncryptBallotRows(matrix, cc, keypair.publicKey));
+        }
+
+        // Tally again
+        total = encryptedBallots[0][0];
+        for (size_t i = 1; i < encryptedBallots.size(); ++i) {
+            total = cc->EvalAdd(total, encryptedBallots[i][0]);
+        }
+
+        cc->Decrypt(keypair.secretKey, total, &result);
+        result->SetLength(numCandidates);
+        tally = result->GetPackedValue();
+
+        std::cout << "Decrypted First-Choice Tally:\n";
+        for (size_t i = 0; i < tally.size(); ++i)
+            std::cout << "  Candidate " << i << ": " << tally[i] << " votes\n";
+
+        toEliminate = FindLowestCandidate(tally, eliminated);
+        std::cout << "Eliminated Candidate: " << toEliminate << "\n\n";
     }
 
-    // Declare winner
-    for (int i = 0; i < numCandidates; ++i)
-    {
-        if (std::find(eliminated.begin(), eliminated.end(), i) == eliminated.end())
-        {
+    auto endTotal = high_resolution_clock::now();
+    long totalTime = duration_cast<milliseconds>(endTotal - startTotal).count();
+    size_t memEnd = GetMemoryUsage();
+    size_t peakMemMB = (memEnd - memStart) / (1024 * 1024);
+
+    std::stringstream ss;
+    Serial::Serialize(*encryptedBallots[0][0], ss, SerType::BINARY);
+    size_t ctSize = ss.str().size();
+
+    WriteCSVHeader(csvFilename);
+    WriteCSVRow(csvFilename, schemeName, numOptions, numVotes, encryptTime, addTime, decryptTime, totalTime, ctSize, peakMemMB);
+
+    for (int i = 0; i < numCandidates; ++i) {
+        if (std::find(eliminated.begin(), eliminated.end(), i) == eliminated.end()) {
             std::cout << "🎉 Winner: Candidate " << i << " 🎉\n";
             return i;
         }
@@ -213,6 +308,7 @@ int RunIRVElection(
     std::cerr << "No winner found!\n";
     return -1;
 }
+
 
 
 
@@ -258,19 +354,6 @@ std::vector<std::vector<Ciphertext<DCRTPoly>>> ShiftAndReencryptBallots(
     }
 
     return encryptedShifted;
-}
-
-// Function to get the current memory usage of the calling process, works only in linux
-size_t GetMemoryUsage()
-{
-    std::ifstream statm("/proc/self/statm");
-    size_t memoryUsage = 0;
-    if (statm.is_open())
-    {
-        statm >> memoryUsage;                 // Resident memory in pages
-        memoryUsage *= sysconf(_SC_PAGESIZE); // Convert pages to bytes
-    }
-    return memoryUsage; // Memory in bytes
 }
 
 
@@ -320,7 +403,7 @@ int main()
             plaintextBallots.push_back(ConvertToPermutationMatrix(vote));
         }
 
-        RunIRVElection(plaintextBallots, cryptoContextBFV, keyPair);
+        RunIRVElection(plaintextBallots, cryptoContextBFV, keyPair, "BFV", "bfv_results.csv", numOptions, numVotes);
 
         auto end = high_resolution_clock::now();
         size_t memEnd = GetMemoryUsage();
@@ -360,7 +443,7 @@ int main()
                 plaintextBallots.push_back(ConvertToPermutationMatrix(vote));
             }
 
-            RunIRVElection(plaintextBallots, cryptoContextBGV, keyPair);
+            RunIRVElection(plaintextBallots, cryptoContextBGV, keyPair, "BGV", "bgv_results.csv", numOptions, numVotes);
 
             auto end = high_resolution_clock::now();
             size_t memEnd = GetMemoryUsage();

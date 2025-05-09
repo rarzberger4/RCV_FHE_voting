@@ -1,0 +1,2 @@
+Timestamp,Scheme,Optiones,Votes,Encrypt(ms),Add(ms),Decrypt(ms),Total(ms),CipherSize(Bytes),PeakMemory(MB)
+2025-05-09 10:45:37,BGV,4,100,1143,10,0,2681,394529,151
