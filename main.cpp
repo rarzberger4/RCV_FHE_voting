@@ -18,7 +18,7 @@ using namespace std::chrono;
 void WriteCSVHeader(const std::string& filename) {
     std::ofstream file(filename, std::ios::app);
     if (file.tellp() == 0) {
-        file << "Timestamp,Scheme,Optiones,Votes,Encrypt(ms),Add(ms),Decrypt(ms),Total(ms),CipherSize(Bytes),PeakMemory(MB)\n";
+        file << "Timestamp,Scheme,Options,Votes,Encrypt(ms),Add(ms),Decrypt(ms),Total(ms),CipherSize(Bytes),PeakMemory(MB)\n";
     }
     file.close();
 }
@@ -200,10 +200,10 @@ int RunIRVElection(
     const std::string& schemeName,
     const std::string& csvFilename,
     int numOptions,
-    int numVotes)   
+    int numVotes)
 {
-    auto startTotal = high_resolution_clock::now();
     size_t memStart = GetMemoryUsage();
+    auto startTotal = high_resolution_clock::now();
 
     int numCandidates = plaintextBallots[0][0].size();
     std::vector<int> eliminated;
@@ -225,7 +225,6 @@ int RunIRVElection(
     }
     end = high_resolution_clock::now();
     long addTime = duration_cast<milliseconds>(end - start).count();
-    
 
     // Measure decryption
     Plaintext result;
@@ -241,13 +240,53 @@ int RunIRVElection(
     for (size_t i = 0; i < tally.size(); ++i)
         std::cout << "  Candidate " << i << ": " << tally[i] << " votes\n";
 
-    int toEliminate = FindLowestCandidate(tally, eliminated);
-    std::cout << "Eliminated Candidate: " << toEliminate << "\n\n";
+    auto endTotal = high_resolution_clock::now();
+    long totalTime = duration_cast<milliseconds>(endTotal - startTotal).count();
+    size_t memEnd = GetMemoryUsage();
+    size_t peakMemMB = (memEnd - memStart) / (1024 * 1024);
 
-    // Run the rest of IRV logic (elimination + reranking)
-    while (static_cast<int>(eliminated.size()) < numCandidates - 1) {
+    std::stringstream ss;
+    Serial::Serialize(*encryptedBallots[0][0], ss, SerType::BINARY);
+    size_t ctSize = ss.str().size();
+
+    WriteCSVHeader(csvFilename);
+    WriteCSVRow(csvFilename, schemeName, numOptions, numVotes, encryptTime, addTime, decryptTime, totalTime, ctSize, peakMemMB);
+
+    while (true) {
+        // Majority check
+        int totalActiveVotes = 0;
+        for (int i = 0; i < numCandidates; ++i)
+            if (std::find(eliminated.begin(), eliminated.end(), i) == eliminated.end())
+                totalActiveVotes += tally[i];
+
+        for (int i = 0; i < numCandidates; ++i) {
+            if (std::find(eliminated.begin(), eliminated.end(), i) == eliminated.end() &&
+                tally[i] > totalActiveVotes / 2) {
+                std::cout << "🎉 Winner: Candidate " << i << " 🎉\n";
+                return i;
+            }
+        }
+
+        // Stop if only one candidate remains
+        int remaining = 0;
+        int potentialWinner = -1;
+        for (int i = 0; i < numCandidates; ++i) {
+            if (std::find(eliminated.begin(), eliminated.end(), i) == eliminated.end()) {
+                remaining++;
+                potentialWinner = i;
+            }
+        }
+        if (remaining == 1) {
+            std::cout << "🎉 Winner by elimination: Candidate " << potentialWinner << " 🎉\n";
+            return potentialWinner;
+        }
+
+        // Eliminate lowest
+        int toEliminate = FindLowestCandidate(tally, eliminated);
+        std::cout << "Eliminated Candidate: " << toEliminate << "\n\n";
         eliminated.push_back(toEliminate);
 
+        // Update plaintext ballots
         std::vector<std::vector<std::vector<int64_t>>> updatedBallots;
         for (auto &matrix : plaintextBallots) {
             std::vector<std::vector<int64_t>> cleaned;
@@ -259,7 +298,6 @@ int RunIRVElection(
             }
             updatedBallots.push_back(cleaned);
         }
-
         plaintextBallots = updatedBallots;
 
         // Re-encrypt
@@ -281,28 +319,6 @@ int RunIRVElection(
         std::cout << "Decrypted First-Choice Tally:\n";
         for (size_t i = 0; i < tally.size(); ++i)
             std::cout << "  Candidate " << i << ": " << tally[i] << " votes\n";
-
-        toEliminate = FindLowestCandidate(tally, eliminated);
-        std::cout << "Eliminated Candidate: " << toEliminate << "\n\n";
-    }
-
-    auto endTotal = high_resolution_clock::now();
-    long totalTime = duration_cast<milliseconds>(endTotal - startTotal).count();
-    size_t memEnd = GetMemoryUsage();
-    size_t peakMemMB = (memEnd - memStart) / (1024 * 1024);
-
-    std::stringstream ss;
-    Serial::Serialize(*encryptedBallots[0][0], ss, SerType::BINARY);
-    size_t ctSize = ss.str().size();
-
-    WriteCSVHeader(csvFilename);
-    WriteCSVRow(csvFilename, schemeName, numOptions, numVotes, encryptTime, addTime, decryptTime, totalTime, ctSize, peakMemMB);
-
-    for (int i = 0; i < numCandidates; ++i) {
-        if (std::find(eliminated.begin(), eliminated.end(), i) == eliminated.end()) {
-            std::cout << "🎉 Winner: Candidate " << i << " 🎉\n";
-            return i;
-        }
     }
 
     std::cerr << "No winner found!\n";
@@ -312,58 +328,11 @@ int RunIRVElection(
 
 
 
-
-
-
-std::vector<std::vector<Ciphertext<DCRTPoly>>> ShiftAndReencryptBallots(
-    const std::vector<std::vector<std::vector<int64_t>>> &plaintextBallots,
-    int eliminatedCandidate,
-    CryptoContext<DCRTPoly> cc,
-    const PublicKey<DCRTPoly> &pk)
-{
-    std::vector<std::vector<Ciphertext<DCRTPoly>>> encryptedShifted;
-
-    for (const auto &matrix : plaintextBallots)
-    {
-        std::vector<std::vector<int64_t>> newMatrix;
-
-        // Step 1: zero out the eliminated candidate
-        std::vector<std::vector<int64_t>> shifted = matrix;
-        for (auto &row : shifted)
-            row[eliminatedCandidate] = 0;
-
-        // Step 2: re-normalize into valid permutation matrix
-        // Remove rows with all zeros (if any), then re-rank
-        for (const auto &row : shifted)
-        {
-            bool hasOne = std::any_of(row.begin(), row.end(), [](int64_t v)
-                                      { return v == 1; });
-            if (hasOne)
-                newMatrix.push_back(row);
-        }
-
-        // Step 3: Encrypt each row
-        std::vector<Ciphertext<DCRTPoly>> encryptedRows;
-        for (const auto &row : newMatrix)
-        {
-            Plaintext pt = cc->MakePackedPlaintext(row);
-            encryptedRows.push_back(cc->Encrypt(pk, pt));
-        }
-
-        encryptedShifted.push_back(encryptedRows);
-    }
-
-    return encryptedShifted;
-}
-
-
-
-
 int main()
 {
     // User-defined parameters
     int numOptions = 4;                                                                                           // Number of voting options
-    int numVotes = 100;                                                                                           // Number of voters
+    int numVotes = 500;                                                                                           // Number of voters
     unsigned int randomSeed = static_cast<unsigned>(std::chrono::system_clock::now().time_since_epoch().count()); // to have the same random voting for each algorithm
 
     std::vector<std::vector<int64_t>> generatedVotes;
