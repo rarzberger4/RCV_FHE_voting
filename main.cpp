@@ -173,40 +173,6 @@ int FindLowestCandidate(
     }
 }
 
-
-
-int RunIRVRound(
-    const std::vector<std::vector<Ciphertext<DCRTPoly>>> &encryptedBallots,
-    CryptoContext<DCRTPoly> cc,
-    const KeyPair<DCRTPoly> &keypair,
-    const std::vector<int> &alreadyEliminated,
-    int numCandidates)
-{
-    std::cout << "Running IRV Round...\n";
-
-    // 1. Tally encrypted first-choice row across all ballots
-    Ciphertext<DCRTPoly> total = HomomorphicTally(encryptedBallots, cc);
-
-    // 2. Decrypt the result
-    Plaintext result;
-    cc->Decrypt(keypair.secretKey, total, &result);
-    result->SetLength(numCandidates);
-    std::vector<int64_t> tally = result->GetPackedValue();
-
-    // 3. Print decrypted tallies
-    std::cout << "Decrypted First-Choice Tally:\n";
-    for (size_t i = 0; i < tally.size(); ++i)
-    {
-        std::cout << "  Candidate " << i << ": " << tally[i] << " votes\n";
-    }
-
-    // 4. Eliminate lowest non-eliminated candidate
-    int toEliminate = FindLowestCandidate(tally, alreadyEliminated);
-    std::cout << "Eliminated Candidate: " << toEliminate << "\n\n";
-
-    return toEliminate;
-}
-
 int RunIRVElection(
     std::vector<std::vector<std::vector<int64_t>>> plaintextBallots,
     CryptoContext<DCRTPoly> cc,
@@ -414,4 +380,3 @@ int main() {
     std::cout << "\n✅ All benchmarks completed.\n";
     return 0;
 }
-
