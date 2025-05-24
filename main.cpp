@@ -187,8 +187,9 @@ int RunIRVElection(
 
     int numCandidates = plaintextBallots[0][0].size();
     std::vector<int> eliminated;
+    int roundCount = 0;
 
-    // Measure encryption
+    // Encrypt ballots
     auto start = high_resolution_clock::now();
     std::vector<std::vector<Ciphertext<DCRTPoly>>> encryptedBallots;
     for (const auto &matrix : plaintextBallots) {
@@ -197,7 +198,7 @@ int RunIRVElection(
     auto end = high_resolution_clock::now();
     long encryptTime = duration_cast<milliseconds>(end - start).count();
 
-    // Measure addition
+    // First tally
     start = high_resolution_clock::now();
     Ciphertext<DCRTPoly> total = encryptedBallots[0][0];
     for (size_t i = 1; i < encryptedBallots.size(); ++i) {
@@ -206,7 +207,7 @@ int RunIRVElection(
     end = high_resolution_clock::now();
     long addTime = duration_cast<milliseconds>(end - start).count();
 
-    // Measure decryption
+    // First decryption
     Plaintext result;
     start = high_resolution_clock::now();
     cc->Decrypt(keypair.secretKey, total, &result);
@@ -220,19 +221,9 @@ int RunIRVElection(
     for (size_t i = 0; i < tally.size(); ++i)
         std::cout << "  Candidate " << i << ": " << tally[i] << " votes\n";
 
-    auto endTotal = high_resolution_clock::now();
-    long totalTime = duration_cast<milliseconds>(endTotal - startTotal).count();
-    size_t memEnd = GetMemoryUsage();
-    size_t peakMemMB = (memEnd - memStart) / (1024 * 1024);
-
-    std::stringstream ss;
-    Serial::Serialize(*encryptedBallots[0][0], ss, SerType::BINARY);
-    size_t ctSize = ss.str().size();
-
-    WriteCSVHeader(csvFilename);
-    WriteCSVRow(csvFilename, schemeName, numOptions, numVotes, encryptTime, addTime, decryptTime, totalTime, ctSize, peakMemMB);
-
     while (true) {
+        roundCount++;
+
         // Majority check
         int totalActiveVotes = 0;
         for (int i = 0; i < numCandidates; ++i)
@@ -242,14 +233,26 @@ int RunIRVElection(
         for (int i = 0; i < numCandidates; ++i) {
             if (std::find(eliminated.begin(), eliminated.end(), i) == eliminated.end() &&
                 tally[i] > totalActiveVotes / 2) {
+                auto endTotal = high_resolution_clock::now();
+                long totalTime = duration_cast<milliseconds>(endTotal - startTotal).count();
+                size_t memEnd = GetMemoryUsage();
+                size_t peakMemMB = (memEnd - memStart) / (1024 * 1024);
+
+                std::stringstream ss;
+                Serial::Serialize(*encryptedBallots[0][0], ss, SerType::BINARY);
+                size_t ctSize = ss.str().size();
+
+                WriteCSVHeader(csvFilename);
+                WriteCSVRow(csvFilename, schemeName, numOptions, numVotes, encryptTime, addTime, decryptTime, totalTime, ctSize, peakMemMB);
+
                 std::cout << "🎉 Winner: Candidate " << i << " 🎉\n";
+                std::cout << "Total Rounds: " << roundCount << "\n";
                 return i;
             }
         }
 
         // Stop if only one candidate remains
-        int remaining = 0;
-        int potentialWinner = -1;
+        int remaining = 0, potentialWinner = -1;
         for (int i = 0; i < numCandidates; ++i) {
             if (std::find(eliminated.begin(), eliminated.end(), i) == eliminated.end()) {
                 remaining++;
@@ -257,7 +260,20 @@ int RunIRVElection(
             }
         }
         if (remaining == 1) {
+            auto endTotal = high_resolution_clock::now();
+            long totalTime = duration_cast<milliseconds>(endTotal - startTotal).count();
+            size_t memEnd = GetMemoryUsage();
+            size_t peakMemMB = (memEnd - memStart) / (1024 * 1024);
+
+            std::stringstream ss;
+            Serial::Serialize(*encryptedBallots[0][0], ss, SerType::BINARY);
+            size_t ctSize = ss.str().size();
+
+            WriteCSVHeader(csvFilename);
+            WriteCSVRow(csvFilename, schemeName, numOptions, numVotes, encryptTime, addTime, decryptTime, totalTime, ctSize, peakMemMB);
+
             std::cout << "🎉 Winner by elimination: Candidate " << potentialWinner << " 🎉\n";
+            std::cout << "Total Rounds: " << roundCount << "\n";
             return potentialWinner;
         }
 
@@ -292,6 +308,7 @@ int RunIRVElection(
             total = cc->EvalAdd(total, encryptedBallots[i][0]);
         }
 
+        // Decrypt tally
         cc->Decrypt(keypair.secretKey, total, &result);
         result->SetLength(numCandidates);
         tally = result->GetPackedValue();
