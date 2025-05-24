@@ -328,8 +328,9 @@ int RunIRVElection(
 int main() {
     std::cout.setf(std::ios::unitbuf);  // Auto-flush stdout for child output
 
-    std::vector<int> candidateOptions = {4, 5};
-    std::vector<int> voteCounts = {100, 200};
+    std::vector<int> candidateOptions = {3, 5, 10, 15, 20, 25, 30};
+    std::vector<int> voteCounts = {100, 500, 1000};
+
     int repetitions = 10;
 
     // Setup BFV CryptoContext
