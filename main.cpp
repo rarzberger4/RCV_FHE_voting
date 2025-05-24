@@ -183,35 +183,35 @@ int RunIRVElection(
     int numVotes)
 {
     size_t memStart = GetMemoryUsage();
-    auto startTotal = high_resolution_clock::now();
+    auto startTotal = steady_clock::now();
 
     int numCandidates = plaintextBallots[0][0].size();
     std::vector<int> eliminated;
     int roundCount = 0;
 
     // Encrypt ballots
-    auto start = high_resolution_clock::now();
+    auto start = steady_clock::now();
     std::vector<std::vector<Ciphertext<DCRTPoly>>> encryptedBallots;
     for (const auto &matrix : plaintextBallots) {
         encryptedBallots.push_back(EncryptBallotRows(matrix, cc, keypair.publicKey));
     }
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     long encryptTime = duration_cast<milliseconds>(end - start).count();
 
     // First tally
-    start = high_resolution_clock::now();
+    start = steady_clock::now();
     Ciphertext<DCRTPoly> total = encryptedBallots[0][0];
     for (size_t i = 1; i < encryptedBallots.size(); ++i) {
         total = cc->EvalAdd(total, encryptedBallots[i][0]);
     }
-    end = high_resolution_clock::now();
+    end = steady_clock::now();
     long addTime = duration_cast<milliseconds>(end - start).count();
 
     // First decryption
     Plaintext result;
-    start = high_resolution_clock::now();
+    start = steady_clock::now();
     cc->Decrypt(keypair.secretKey, total, &result);
-    end = high_resolution_clock::now();
+    end = steady_clock::now();
     long decryptTime = duration_cast<milliseconds>(end - start).count();
 
     result->SetLength(numCandidates);
@@ -233,7 +233,7 @@ int RunIRVElection(
         for (int i = 0; i < numCandidates; ++i) {
             if (std::find(eliminated.begin(), eliminated.end(), i) == eliminated.end() &&
                 tally[i] > totalActiveVotes / 2) {
-                auto endTotal = high_resolution_clock::now();
+                auto endTotal = steady_clock::now();
                 long totalTime = duration_cast<milliseconds>(endTotal - startTotal).count();
                 size_t memEnd = GetMemoryUsage();
                 size_t peakMemMB = (memEnd - memStart) / (1024 * 1024);
@@ -260,7 +260,7 @@ int RunIRVElection(
             }
         }
         if (remaining == 1) {
-            auto endTotal = high_resolution_clock::now();
+            auto endTotal = steady_clock::now();
             long totalTime = duration_cast<milliseconds>(endTotal - startTotal).count();
             size_t memEnd = GetMemoryUsage();
             size_t peakMemMB = (memEnd - memStart) / (1024 * 1024);
@@ -330,7 +330,7 @@ int main() {
 
     std::vector<int> candidateOptions = {4, 5};
     std::vector<int> voteCounts = {100, 200};
-    int repetitions = 2;
+    int repetitions = 10;
 
     // Setup BFV CryptoContext
     CCParams<CryptoContextBFVRNS> paramsBFV;
