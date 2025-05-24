@@ -35,7 +35,9 @@ void WriteCSVRow(const std::string& filename, const std::string& scheme,int numO
     file.close();
 }
 
-
+// Forking used to run benchmarks in a separate process
+// to avoid memory issues with OpenFHE in the main process
+// This allows us to measure memory usage and performance without interference
 void RunForkedBenchmark(const std::function<void()> &fn) {
     pid_t pid = fork();
     if (pid == 0) {
@@ -115,6 +117,8 @@ std::vector<Ciphertext<DCRTPoly>> EncryptBallotRows(
     return encryptedMatrix;
 }
 
+
+// Decrypt a single row of the tally
 std::vector<int64_t> DecryptTallyRow(
     const std::vector<Ciphertext<DCRTPoly>> &row,
     CryptoContext<DCRTPoly> cc,
@@ -328,10 +332,10 @@ int RunIRVElection(
 int main() {
     std::cout.setf(std::ios::unitbuf);  // Auto-flush stdout for child output
 
-    std::vector<int> candidateOptions = {3, 5, 10, 15, 20, 25, 30};
-    std::vector<int> voteCounts = {100, 500, 1000};
+    std::vector<int> candidateOptions = {3, 10, 15, 30};
+    std::vector<int> voteCounts = {30, 100, 250, 500, 1000};
 
-    int repetitions = 10;
+    int repetitions = 1;
 
     // Setup BFV CryptoContext
     CCParams<CryptoContextBFVRNS> paramsBFV;
