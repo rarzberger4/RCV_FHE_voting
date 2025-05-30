@@ -87,15 +87,14 @@ std::vector<std::vector<int64_t>> GenerateVotes(int numOptions, int numVotes, un
 // Convert ranked votes to permutation matrix
 std::vector<std::vector<int64_t>> ConvertToPermutationMatrix(const std::vector<int64_t> &ranking)
 {
-    int numOptions = ranking.size();
-    std::vector<std::vector<int64_t>> matrix(numOptions, std::vector<int64_t>(numOptions, 0));
+    int n = ranking.size();
+    std::vector<std::vector<int64_t>> matrix(n, std::vector<int64_t>(n, 0));
 
-    for (int candidate = 0; candidate < numOptions; ++candidate)
+    for (int candidate = 0; candidate < n; ++candidate)
     {
         int rank = ranking[candidate]; // Candidate C is ranked R
         matrix[rank][candidate] = 1;   // Row = rank, Col = candidate
     }
-
     return matrix;
 }
 
@@ -229,14 +228,14 @@ int RunIRVElection(
         roundCount++;
 
         // Majority check
-        int totalActiveVotes = 0;
+        int totalVotes = 0;
         for (int i = 0; i < numCandidates; ++i)
             if (std::find(eliminated.begin(), eliminated.end(), i) == eliminated.end())
-                totalActiveVotes += tally[i];
+                totalVotes += tally[i];
 
         for (int i = 0; i < numCandidates; ++i) {
             if (std::find(eliminated.begin(), eliminated.end(), i) == eliminated.end() &&
-                tally[i] > totalActiveVotes / 2) {
+                tally[i] > totalVotes / 2) {
                 auto endTotal = steady_clock::now();
                 long totalTime = duration_cast<milliseconds>(endTotal - startTotal).count();
                 size_t memEnd = GetMemoryUsage();
@@ -335,6 +334,7 @@ int main() {
     std::vector<int> candidateOptions = {3, 10, 15, 30};
     std::vector<int> voteCounts = {30, 100, 250, 500, 1000};
 
+    
     int repetitions = 1;
 
     // Setup BFV CryptoContext
@@ -344,6 +344,7 @@ int main() {
     auto cryptoContextBFV = GenCryptoContext(paramsBFV);
     cryptoContextBFV->Enable(PKE);
     cryptoContextBFV->Enable(LEVELEDSHE);
+    std::cout << "CryptoContext Parameters: " << paramsBFV.GetSecurityLevel() << std::endl;
 
     // Setup BGV CryptoContext
     CCParams<CryptoContextBGVRNS> paramsBGV;
